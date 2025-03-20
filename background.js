@@ -1,24 +1,30 @@
 const API_KEY = "AIzaSyAkePIzPIygVZmWVBiJRP8uMu4RAhochGE"; // 🔹 Replace this with your actual key
 const API_URL = `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${API_KEY}`;
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === "complete" && tab.url) {
-        console.log("Checking URL:", tab.url);
-        checkPhishingURL(tab.url);
-    }
-});
+chrome.webNavigation.onCompleted.addListener((details) => {
+    if (!details.url) return;
+
+    console.log("🔍 Checking URL:", details.url);
+    checkPhishingURL(details.url);
+
+    // Inject content.js into the active tab
+    chrome.scripting.executeScript({
+        target: { tabId: details.tabId },
+        files: ["content.js"]
+    }).catch(err => console.error("❌ Error injecting content script:", err));
+}, { url: [{ schemes: ["http", "https"] }] });
 
 function checkPhishingURL(url) {
     const requestBody = {
         client: {
             clientId: "phishguard-extension",
-            clientVersion: "1.0"
+            clientVersion: "1.1"
         },
         threatInfo: {
             threatTypes: ["MALWARE", "SOCIAL_ENGINEERING"],
             platformTypes: ["ANY_PLATFORM"],
             threatEntryTypes: ["URL"],
-            threatEntries: [{ url: url }]
+            threatEntries: [{ url }]
         }
     };
 
@@ -41,7 +47,14 @@ function showWarningNotification(url) {
         type: "basic",
         iconUrl: "icons/icon128.png",
         title: "⚠️ Phishing Warning!",
-        message: `This site may be a phishing attempt: ${url}`,
+        message: `🚨 This site may be a phishing attempt: ${url}`,
         priority: 2
     });
 }
+
+// Listen for messages from content.js to check links dynamically
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "checkPhishing") {
+        checkPhishingURL(request.url);
+    }
+});
